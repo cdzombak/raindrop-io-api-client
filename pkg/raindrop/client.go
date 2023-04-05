@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strconv"
 	"time"
@@ -57,6 +58,9 @@ type AccessTokenResponse struct {
 	ExpiresIn    int    `json:"expires_in,omitempty"`
 	TokenType    string `json:"token_type,omitempty"`
 	Error        string `json:"error,omitempty"`
+	ErrorMessage string `json:"errorMessage,omitempty"`
+	Result       bool   `json:"result"`
+	Status       int    `json:"status"`
 }
 
 // accessTokenRequest represents the token exchange api request item
@@ -531,6 +535,10 @@ func (c *Client) GetAccessToken(userCode string, ctx context.Context) (*AccessTo
 		return nil, err
 	}
 
+	if result.Status >= 400 {
+		return nil, fmt.Errorf("access token request failed: %s", result.ErrorMessage)
+	}
+
 	return result, nil
 }
 
@@ -574,9 +582,13 @@ func (c *Client) GetAuthorizationCodeHandler(w http.ResponseWriter, r *http.Requ
 	code, err := c.GetAuthorizationCode(r)
 	if err != nil {
 		ePrintln(err.Error())
+		w.WriteHeader(http.StatusUnauthorized)
+		_, err = fmt.Fprintf(w, "<h1>Authorization Error</h1><code>%s</code>", err.Error())
+		return
 	}
 
-	_, err = fmt.Fprintf(w, "<h1>You've been authorized</h1><p>%s</p>", code)
+	w.WriteHeader(http.StatusOK)
+	_, err = fmt.Fprintf(w, "<h1>Authorized!</h1><p>You may close this window and return to your Raindrop.io client application.</p><code>%s</code>", code)
 	if err != nil {
 		ePrintln(err.Error())
 	}
@@ -652,12 +664,10 @@ func parseResponse(response *http.Response, expectedStatus int, clazz interface{
 		return err
 	}
 	body, err := ioutil.ReadAll(response.Body)
-
-	// TODO(cdzombak): handle this result returned from code exchange with HTTP 200
-	// indicates an app misconfiguration on the server side
-	// {"result":false,"status":400,"errorMessage":"Incorrect redirect_uri"}
 	if err != nil {
-		panic(err)
+		err := fmt.Errorf("failed to read response: %w", err)
+		ePrintln(err.Error())
+		return err
 	}
 
 	return json.Unmarshal(body, clazz)
