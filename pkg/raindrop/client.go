@@ -7,14 +7,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/pkg/errors"
-	"golang.org/x/net/context"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
 	"strconv"
 	"time"
+
+	"github.com/pkg/errors"
+	"golang.org/x/net/context"
 )
 
 const (
@@ -443,7 +444,8 @@ func (c *Client) GetTags(accessToken string, ctx context.Context) (*Tags, error)
 func (c *Client) DeleteTags(accessToken string, ctx context.Context, tagIDs []string) error {
 	u := *c.apiURL
 	u.Path = path.Join(c.apiURL.Path, endpointTags)
-	request, err := c.newRequest(accessToken, http.MethodDelete, u, nil, ctx)
+	body := deleteTagsRequest{Tags: tagIDs}
+	request, err := c.newRequest(accessToken, http.MethodDelete, u, body, ctx)
 	if err != nil {
 		return err
 	}
