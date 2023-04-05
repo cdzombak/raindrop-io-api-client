@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
@@ -644,6 +645,14 @@ func parseResponse(response *http.Response, expectedStatus int, clazz interface{
 		fmt.Printf("Can't parse response" + err.Error())
 		return err
 	}
+	body, err := ioutil.ReadAll(response.Body)
 
-	return json.NewDecoder(response.Body).Decode(clazz)
+	// TODO(cdzombak): handle this result returned from code exchange with HTTP 200
+	// indicates an app misconfiguration on the server side
+	// {"result":false,"status":400,"errorMessage":"Incorrect redirect_uri"}
+	if err != nil {
+		panic(err)
+	}
+
+	return json.Unmarshal(body, clazz)
 }
