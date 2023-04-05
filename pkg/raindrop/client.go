@@ -92,6 +92,14 @@ type CreateCollectionResponse struct {
 	ErrorMessage string                  `json:"errorMessage,omitempty"`
 }
 
+type deleteTagsRequest struct {
+	Tags []string `json:"tags"`
+}
+
+type DeleteTagsResponse struct {
+	Result bool `json:"result"`
+}
+
 // access represents collections access level and drag possibility from collection
 // to another one
 type access struct {
@@ -427,6 +435,29 @@ func (c *Client) GetTags(accessToken string, ctx context.Context) (*Tags, error)
 	}
 
 	return r, nil
+}
+
+// DeleteTags calls Delete tags API.
+// Reference: https://developer.raindrop.io/v1/tags#remove-tag-s
+func (c *Client) DeleteTags(accessToken string, ctx context.Context, tagIDs []string) error {
+	u := *c.apiURL
+	u.Path = path.Join(c.apiURL.Path, endpointTags)
+	request, err := c.newRequest(accessToken, http.MethodDelete, u, nil, ctx)
+	if err != nil {
+		return err
+	}
+
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return err
+	}
+
+	r := new(DeleteTagsResponse)
+	if err := parseResponse(response, 200, &r); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // GetTaggedRaindrops finds raindrops with exact tags.
