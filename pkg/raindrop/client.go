@@ -352,7 +352,7 @@ func (c *Client) CreateSimpleRaindrop(accessToken string, link string, ctx conte
 	defer func() {
 		err := resp.Body.Close()
 		if err != nil {
-			fmt.Printf("Can't close response's Body in CreateSimpleRaindrop: %v", err)
+			ePrintf("Can't close response's Body in CreateSimpleRaindrop: %v\n", err)
 		}
 	}()
 
@@ -566,15 +566,19 @@ func (c *Client) RefreshAccessToken(refreshToken string, ctx context.Context) (*
 }
 
 // GetAuthorizationCodeHandler handles redirect request from raindrop's authorization page
+//
+//goland:noinspection GoMixedReceiverTypes
 func (c *Client) GetAuthorizationCodeHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+
 	code, err := c.GetAuthorizationCode(r)
 	if err != nil {
-		fmt.Println(err)
+		ePrintln(err.Error())
 	}
 
 	_, err = fmt.Fprintf(w, "<h1>You've been authorized</h1><p>%s</p>", code)
 	if err != nil {
-		fmt.Println(err)
+		ePrintln(err.Error())
 	}
 	c.ClientCode = code
 }
@@ -644,7 +648,7 @@ func parseResponse(response *http.Response, expectedStatus int, clazz interface{
 
 	if response.StatusCode != expectedStatus && response.StatusCode != 400 {
 		err := fmt.Errorf("unexpected Status Code: %d", response.StatusCode)
-		fmt.Printf("Can't parse response" + err.Error())
+		ePrintf("Can't parse response: %s\n", err)
 		return err
 	}
 	body, err := ioutil.ReadAll(response.Body)
@@ -657,4 +661,14 @@ func parseResponse(response *http.Response, expectedStatus int, clazz interface{
 	}
 
 	return json.Unmarshal(body, clazz)
+}
+
+func ePrintf(f string, a ...interface{}) {
+	_, _ = fmt.Fprint(os.Stderr, "[raindrop-io-api-client] ")
+	_, _ = fmt.Fprintf(os.Stderr, f, a)
+}
+
+func ePrintln(s string) {
+	_, _ = fmt.Fprint(os.Stderr, "[raindrop-io-api-client] ")
+	_, _ = fmt.Fprintln(os.Stderr, s)
 }
