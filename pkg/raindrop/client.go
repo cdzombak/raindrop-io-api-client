@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -602,7 +602,11 @@ func (c *Client) GetAuthorizationCodeHandler(w http.ResponseWriter, r *http.Requ
 			c.logger.Error("Authorization error", "error", err)
 		}
 		w.WriteHeader(http.StatusUnauthorized)
-		_, err = fmt.Fprintf(w, "<h1>Authorization Error</h1><code>%s</code>", err.Error())
+		if _, writeErr := fmt.Fprintf(w, "<h1>Authorization Error</h1><code>%s</code>", err.Error()); writeErr != nil {
+			if c.logger != nil {
+				c.logger.Error("Failed to write error response", "error", writeErr)
+			}
+		}
 		return
 	}
 
@@ -686,7 +690,7 @@ func parseResponse(response *http.Response, expectedStatus int, clazz interface{
 		}
 		return err
 	}
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		err := fmt.Errorf("failed to read response: %w", err)
 		if logger != nil {

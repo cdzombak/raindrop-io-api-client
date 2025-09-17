@@ -12,71 +12,88 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"github.com/kattaris/errhand"
-	"github.com/kattaris/raindrop-io-api-client/pkg/raindrop"
+	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
 	"time"
+
+	"github.com/cdzombak/raindrop-io-api-client/pkg/raindrop"
 )
 
-var log *errhand.Errhand
-
-func init() {
-	log = errhand.New()
-	logPath := os.Getenv("LOGS") + "/raindrop/main.log"
-	log.CustomLogger(logPath, "debug")
-}
-
 func main() {
-	client, err := raindrop.NewClient("5478394jfkdlsf843u430",
+	// Create logger (optional)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	
+	client, err := raindrop.NewClientWithLogger("5478394jfkdlsf843u430",
 		"e46b6a8a-018d-43b1-8b28-543kjl32ghj",
-		"http://localhost:8080/oauth")
-	log.HandleError(err, true)
+		"http://localhost:8080/oauth", logger)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	go func() {
 		http.HandleFunc("/oauth", client.GetAuthorizationCodeHandler)
-		err = http.ListenAndServe(":8080", nil)
-		log.HandleError(err, true)
+		if err := http.ListenAndServe(":8080", nil); err != nil {
+			log.Fatal(err)
+		}
 	}()
 
 	// Step 1: The authorization request
 	authUrl, err := client.GetAuthorizationURL()
-	log.HandleError(err, true)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Step 2: The redirection to your application site
 	u, err := url.QueryUnescape(authUrl.String())
-	log.HandleError(err, true)
-	err = openBrowser(u)
-	log.HandleError(err, true)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := openBrowser(u); err != nil {
+		log.Fatal(err)
+	}
 
 	// Step 3: The token exchange
 	for client.ClientCode == "" {
-		log.Infoln("Waiting for client to authorize")
+		fmt.Println("Waiting for client to authorize")
 		time.Sleep(3 * time.Second)
 	}
 
-	accessTokenResp, err := client.GetAccessToken(client.ClientCode)
-	log.HandleError(err, true)
+	ctx := context.Background()
+	accessTokenResp, err := client.GetAccessToken(client.ClientCode, ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
 	accessToken := accessTokenResp.AccessToken
 
 	// Step 4: Check API's methods
 	result, err := client.CreateCollection(accessToken, true, "list",
-		"Test", 1, false, 0, nil)
-	log.HandleError(err, false)
+		"Test", 1, false, 0, nil, ctx)
+	if err != nil {
+		log.Printf("Error creating collection: %v", err)
+	} else {
+		fmt.Printf("Create collection result: %v\n", result)
+	}
 
-	fmt.Printf("Create collection result: %v\n", result)
+	rootCollections, err := client.GetRootCollections(accessToken, ctx)
+	if err != nil {
+		log.Printf("Error getting root collections: %v", err)
+	} else {
+		fmt.Printf("Root Collections: %v\n", rootCollections)
+	}
 
-	rootCollections, err := client.GetRootCollections(accessToken)
-	log.HandleError(err, false)
-	fmt.Printf("Root Collections: %v\n", rootCollections)
-
-	childCollections, err := client.GetChildCollections(accessToken)
-	log.HandleError(err, false)
-	fmt.Printf("Child Collections: %v\n", childCollections)
+	childCollections, err := client.GetChildCollections(accessToken, ctx)
+	if err != nil {
+		log.Printf("Error getting child collections: %v", err)
+	} else {
+		fmt.Printf("Child Collections: %v\n", childCollections)
+	}
 }
 
 func openBrowser(url string) error {
@@ -90,10 +107,6 @@ func openBrowser(url string) error {
 		err = exec.Command("open", url).Start()
 	default:
 		err = fmt.Errorf("unsupported platform")
-	}
-
-	if err != nil {
-		log.Errorln(err)
 	}
 
 	return err
