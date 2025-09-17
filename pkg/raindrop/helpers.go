@@ -27,7 +27,7 @@ func traverse(n *html.Node) (string, bool) {
 func GetHtmlTitle(r io.Reader) (string, bool) {
 	doc, err := html.Parse(r)
 	if err != nil {
-		panic("Fail to parse html")
+		return "", false
 	}
 
 	return traverse(doc)
