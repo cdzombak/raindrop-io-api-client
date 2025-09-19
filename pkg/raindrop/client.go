@@ -212,6 +212,10 @@ func NewClient(clientId string, clientSecret string, redirectUri string) (*Clien
 		IdleConnTimeout:    30 * time.Second,
 		DisableCompression: true,
 	}
+	
+	handler := slog.NewTextHandler(io.Discard, nil)
+	logger := slog.New(handler)
+	
 	client := Client{
 		apiURL:  api,
 		authURL: auth,
@@ -222,6 +226,7 @@ func NewClient(clientId string, clientSecret string, redirectUri string) (*Clien
 		clientId:     clientId,
 		clientSecret: clientSecret,
 		redirectUri:  redirectUri,
+		logger:       logger,
 	}
 
 	return &client, nil
@@ -371,9 +376,7 @@ func (c *Client) CreateSimpleRaindrop(accessToken string, link string, ctx conte
 	defer func() {
 		err := resp.Body.Close()
 		if err != nil {
-			if c.logger != nil {
-				c.logger.Warn("Failed to close response body in CreateSimpleRaindrop", "error", err)
-			}
+			c.logger.Warn("Failed to close response body in CreateSimpleRaindrop", "error", err)
 		}
 	}()
 
@@ -598,14 +601,10 @@ func (c *Client) GetAuthorizationCodeHandler(w http.ResponseWriter, r *http.Requ
 
 	code, err := c.GetAuthorizationCode(r)
 	if err != nil {
-		if c.logger != nil {
-			c.logger.Error("Authorization error", "error", err)
-		}
+		c.logger.Error("Authorization error", "error", err)
 		w.WriteHeader(http.StatusUnauthorized)
 		if _, writeErr := fmt.Fprintf(w, "<h1>Authorization Error</h1><code>%s</code>", err.Error()); writeErr != nil {
-			if c.logger != nil {
-				c.logger.Error("Failed to write error response", "error", writeErr)
-			}
+			c.logger.Error("Failed to write error response", "error", writeErr)
 		}
 		return
 	}
@@ -613,9 +612,7 @@ func (c *Client) GetAuthorizationCodeHandler(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 	_, err = fmt.Fprintf(w, "<h1>Authorized!</h1><p>You may close this window and return to your Raindrop.io client application.</p><code>%s</code>", code)
 	if err != nil {
-		if c.logger != nil {
-			c.logger.Error("Failed to write authorization response", "error", err)
-		}
+		c.logger.Error("Failed to write authorization response", "error", err)
 	}
 	c.ClientCode = code
 }
@@ -685,17 +682,13 @@ func parseResponse(response *http.Response, expectedStatus int, clazz interface{
 
 	if response.StatusCode != expectedStatus && response.StatusCode != 400 {
 		err := fmt.Errorf("unexpected Status Code: %d", response.StatusCode)
-		if logger != nil {
-			logger.Error("Failed to parse response", "error", err, "status_code", response.StatusCode)
-		}
+		logger.Error("Failed to parse response", "error", err, "status_code", response.StatusCode)
 		return err
 	}
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		err := fmt.Errorf("failed to read response: %w", err)
-		if logger != nil {
-			logger.Error("Failed to read response body", "error", err)
-		}
+		logger.Error("Failed to read response body", "error", err)
 		return err
 	}
 
