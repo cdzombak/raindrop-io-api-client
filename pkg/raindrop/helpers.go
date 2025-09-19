@@ -24,11 +24,12 @@ func traverse(n *html.Node) (string, bool) {
 	return "", false
 }
 
-func GetHtmlTitle(r io.Reader) (string, bool) {
+func GetHtmlTitle(r io.Reader) (string, bool, error) {
 	doc, err := html.Parse(r)
 	if err != nil {
-		return "", false
+		return "", false, err
 	}
 
-	return traverse(doc)
+	title, found := traverse(doc)
+	return title, found, nil
 }
