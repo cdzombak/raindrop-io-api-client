@@ -7,10 +7,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"strconv"
 	"time"
@@ -48,6 +48,7 @@ type Client struct {
 	clientSecret string
 	redirectUri  string
 	ClientCode   string
+	logger       *slog.Logger
 }
 
 // AccessTokenResponse represents the token exchange api response item
@@ -211,6 +212,10 @@ func NewClient(clientId string, clientSecret string, redirectUri string) (*Clien
 		IdleConnTimeout:    30 * time.Second,
 		DisableCompression: true,
 	}
+	
+	handler := slog.NewTextHandler(io.Discard, nil)
+	logger := slog.New(handler)
+	
 	client := Client{
 		apiURL:  api,
 		authURL: auth,
@@ -221,9 +226,24 @@ func NewClient(clientId string, clientSecret string, redirectUri string) (*Clien
 		clientId:     clientId,
 		clientSecret: clientSecret,
 		redirectUri:  redirectUri,
+		logger:       logger,
 	}
 
 	return &client, nil
+}
+
+// NewClientWithLogger creates Raindrop.io client with optional logger
+func NewClientWithLogger(clientId string, clientSecret string, redirectUri string, logger *slog.Logger) (*Client, error) {
+	client, err := NewClient(clientId, clientSecret, redirectUri)
+	if err != nil {
+		return nil, err
+	}
+	client.logger = logger
+	return client, nil
+}
+
+func (c *Client) SetLogger(logger *slog.Logger) {
+	c.logger = logger
 }
 
 // GetRootCollections call Get root collections API.
@@ -243,7 +263,7 @@ func (c *Client) GetRootCollections(accessToken string, ctx context.Context) (*G
 	}
 
 	r := new(GetCollectionsResponse)
-	if err := parseResponse(response, 200, &r); err != nil {
+	if err := c.parseResponse(response, 200, &r); err != nil {
 		return nil, err
 	}
 
@@ -267,7 +287,7 @@ func (c *Client) GetChildCollections(accessToken string, ctx context.Context) (*
 	}
 
 	result := new(GetCollectionsResponse)
-	if err = parseResponse(resp, 200, &result); err != nil {
+	if err = c.parseResponse(resp, 200, &result); err != nil {
 		return nil, err
 	}
 
@@ -291,7 +311,7 @@ func (c Client) GetCollection(accessToken string, id uint32, ctx context.Context
 	}
 
 	result := new(GetCollectionResponse)
-	if err = parseResponse(resp, 200, &result); err != nil {
+	if err = c.parseResponse(resp, 200, &result); err != nil {
 		return nil, err
 	}
 
@@ -338,7 +358,7 @@ func (c *Client) CreateCollection(accessToken string, isRoot bool, view string, 
 	}
 
 	result := new(CreateCollectionResponse)
-	err = parseResponse(response, 200, &result)
+	err = c.parseResponse(response, 200, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -356,12 +376,15 @@ func (c *Client) CreateSimpleRaindrop(accessToken string, link string, ctx conte
 	defer func() {
 		err := resp.Body.Close()
 		if err != nil {
-			ePrintf("Can't close response's Body in CreateSimpleRaindrop: %v\n", err)
+			c.logger.Warn("Failed to close response body in CreateSimpleRaindrop", "error", err)
 		}
 	}()
 
 	title := ""
-	if val, ok := GetHtmlTitle(resp.Body); ok {
+	if val, ok, err := GetHtmlTitle(resp.Body); err != nil {
+		c.logger.Warn("Failed to parse HTML title", "error", err)
+		title = "Fail to get HTML title"
+	} else if ok {
 		title = val
 	} else {
 		title = "Fail to get HTML title"
@@ -384,7 +407,7 @@ func (c *Client) CreateSimpleRaindrop(accessToken string, link string, ctx conte
 	}
 
 	result := new(SingleRaindropResponse)
-	err = parseResponse(response, 200, &result)
+	err = c.parseResponse(response, 200, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +436,7 @@ func (c *Client) GetRaindrops(accessToken string, collectionID string, perpage i
 	}
 
 	r := new(MultiRaindropsResponse)
-	if err := parseResponse(response, 200, &r); err != nil {
+	if err := c.parseResponse(response, 200, &r); err != nil {
 		return nil, err
 	}
 
@@ -436,7 +459,7 @@ func (c *Client) GetTags(accessToken string, ctx context.Context) (*Tags, error)
 	}
 
 	r := new(Tags)
-	if err := parseResponse(response, 200, &r); err != nil {
+	if err := c.parseResponse(response, 200, &r); err != nil {
 		return nil, err
 	}
 
@@ -460,7 +483,7 @@ func (c *Client) DeleteTags(accessToken string, ctx context.Context, tagIDs []st
 	}
 
 	r := new(DeleteTagsResponse)
-	if err := parseResponse(response, 200, &r); err != nil {
+	if err := c.parseResponse(response, 200, &r); err != nil {
 		return err
 	}
 
@@ -490,7 +513,7 @@ func (c *Client) GetTaggedRaindrops(accessToken string, tag string, ctx context.
 	}
 
 	r := new(MultiRaindropsResponse)
-	if err := parseResponse(response, 200, &r); err != nil {
+	if err := c.parseResponse(response, 200, &r); err != nil {
 		return nil, err
 	}
 
@@ -530,7 +553,7 @@ func (c *Client) GetAccessToken(userCode string, ctx context.Context) (*AccessTo
 	}
 
 	result := new(AccessTokenResponse)
-	err = parseResponse(response, 200, &result)
+	err = c.parseResponse(response, 200, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -565,7 +588,7 @@ func (c *Client) RefreshAccessToken(refreshToken string, ctx context.Context) (*
 		return nil, err
 	}
 	result := new(AccessTokenResponse)
-	err = parseResponse(response, 200, &result)
+	err = c.parseResponse(response, 200, &result)
 	if err != nil {
 		return nil, err
 	}
@@ -581,16 +604,16 @@ func (c *Client) GetAuthorizationCodeHandler(w http.ResponseWriter, r *http.Requ
 
 	code, err := c.GetAuthorizationCode(r)
 	if err != nil {
-		ePrintln(err.Error())
+		c.logger.Error("Authorization error", "error", err)
 		w.WriteHeader(http.StatusUnauthorized)
-		_, err = fmt.Fprintf(w, "<h1>Authorization Error</h1><code>%s</code>", err.Error())
+		_, _ = fmt.Fprintf(w, "<h1>Authorization Error</h1><code>%s</code>", err.Error())
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	_, err = fmt.Fprintf(w, "<h1>Authorized!</h1><p>You may close this window and return to your Raindrop.io client application.</p><code>%s</code>", code)
 	if err != nil {
-		ePrintln(err.Error())
+		c.logger.Error("Failed to write authorization response", "error", err)
 	}
 	c.ClientCode = code
 }
@@ -653,32 +676,22 @@ func (c *Client) newRequest(accessToken string, httpMethod string, fullUrl url.U
 	return req, nil
 }
 
-func parseResponse(response *http.Response, expectedStatus int, clazz interface{}) error {
+func (c *Client) parseResponse(response *http.Response, expectedStatus int, clazz interface{}) error {
 	defer func() {
 		_ = response.Body.Close()
 	}()
 
 	if response.StatusCode != expectedStatus && response.StatusCode != 400 {
 		err := fmt.Errorf("unexpected Status Code: %d", response.StatusCode)
-		ePrintf("Can't parse response: %s\n", err)
+		c.logger.Error("Failed to parse response", "error", err, "status_code", response.StatusCode)
 		return err
 	}
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		err := fmt.Errorf("failed to read response: %w", err)
-		ePrintln(err.Error())
+		c.logger.Error("Failed to read response body", "error", err)
 		return err
 	}
 
 	return json.Unmarshal(body, clazz)
-}
-
-func ePrintf(f string, a ...interface{}) {
-	_, _ = fmt.Fprint(os.Stderr, "[raindrop-io-api-client] ")
-	_, _ = fmt.Fprintf(os.Stderr, f, a)
-}
-
-func ePrintln(s string) {
-	_, _ = fmt.Fprint(os.Stderr, "[raindrop-io-api-client] ")
-	_, _ = fmt.Fprintln(os.Stderr, s)
 }
