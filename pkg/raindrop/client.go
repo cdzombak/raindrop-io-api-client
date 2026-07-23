@@ -24,7 +24,6 @@ const (
 	authHost = "https://raindrop.io"
 
 	endpointAuthorize   = "/oauth/authorize"
-	authorizeUri        = endpointAuthorize + "?client_id=%s&redirect_uri=%s"
 	endpointAccessToken = "/oauth/access_token"
 
 	endpointGetRootCollections  = "/rest/v1/collections"
@@ -212,10 +211,10 @@ func NewClient(clientId string, clientSecret string, redirectUri string) (*Clien
 		IdleConnTimeout:    30 * time.Second,
 		DisableCompression: true,
 	}
-	
+
 	handler := slog.NewTextHandler(io.Discard, nil)
 	logger := slog.New(handler)
-	
+
 	client := Client{
 		apiURL:  api,
 		authURL: auth,
@@ -522,10 +521,13 @@ func (c *Client) GetTaggedRaindrops(accessToken string, tag string, ctx context.
 
 // GetAuthorizationURL returns URL for user to authorize app
 func (c *Client) GetAuthorizationURL() (url.URL, error) {
-	u := c.authURL
-	uri := fmt.Sprintf(authorizeUri, c.clientId, c.redirectUri)
-	u.Path = path.Join(uri)
-	return *u, nil
+	u := *c.authURL
+	u.Path = endpointAuthorize
+	q := url.Values{}
+	q.Set("client_id", c.clientId)
+	q.Set("redirect_uri", c.redirectUri)
+	u.RawQuery = q.Encode()
+	return u, nil
 }
 
 // GetAccessToken exchanges user's authorization code to access token
