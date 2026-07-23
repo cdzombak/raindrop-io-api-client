@@ -34,27 +34,45 @@ func Test_NewClient(t *testing.T) {
 }
 
 func TestClient_GetAuthorizationURL(t *testing.T) {
-	client, err := NewClient("test_id", "test_secret",
-		"test_redirect_uri")
+	// Use a realistic redirect URI containing "://" and a path: this is the
+	// case that a naive path.Join-based implementation mangles.
+	const redirectURI = "http://localhost:8080/oauth"
+	client, err := NewClient("test_id", "test_secret", redirectURI)
 	if err != nil {
-		t.Errorf("error: %v", err)
+		t.Fatalf("error: %v", err)
 	}
 
 	auth, err := client.GetAuthorizationURL()
 	if err != nil {
-		t.Errorf("error: %v", err)
+		t.Fatalf("error: %v", err)
 	}
 
-	actualAuthUrl, err := url.QueryUnescape(auth.String())
+	// The returned URL must be parseable and preserve every component exactly,
+	// with the query in RawQuery (not folded into the path).
+	parsed, err := url.Parse(auth.String())
 	if err != nil {
-		t.Errorf("error: %v", err)
+		t.Fatalf("GetAuthorizationURL returned an unparseable URL %q: %v", auth.String(), err)
+	}
+	if parsed.Scheme != "https" {
+		t.Errorf("scheme = %q, want %q", parsed.Scheme, "https")
+	}
+	if parsed.Host != "raindrop.io" {
+		t.Errorf("host = %q, want %q", parsed.Host, "raindrop.io")
+	}
+	if parsed.Path != "/oauth/authorize" {
+		t.Errorf("path = %q, want %q", parsed.Path, "/oauth/authorize")
+	}
+	if got := parsed.Query().Get("client_id"); got != "test_id" {
+		t.Errorf("client_id = %q, want %q", got, "test_id")
+	}
+	if got := parsed.Query().Get("redirect_uri"); got != redirectURI {
+		t.Errorf("redirect_uri = %q, want %q", got, redirectURI)
 	}
 
-	expectedAuthUrl :=
-		"https://raindrop.io/oauth/authorize?client_id=test_id&redirect_uri=test_redirect_uri"
-
-	if actualAuthUrl != expectedAuthUrl {
-		t.Errorf("assert failed. expect:%s actual:%s", expectedAuthUrl, actualAuthUrl)
+	// Building the URL must not mutate the client's shared authURL.
+	if client.authURL.RawQuery != "" || client.authURL.Path != "" {
+		t.Errorf("GetAuthorizationURL mutated shared authURL: path=%q query=%q",
+			client.authURL.Path, client.authURL.RawQuery)
 	}
 }
 
