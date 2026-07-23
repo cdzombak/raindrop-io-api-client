@@ -574,7 +574,7 @@ func (c *Client) RefreshAccessToken(refreshToken string, ctx context.Context) (*
 	body := refreshTokenRequest{
 		ClientId:     c.clientId,
 		ClientSecret: c.clientSecret,
-		GrantType:    "authorization_code",
+		GrantType:    "refresh_token",
 		RefreshToken: refreshToken,
 	}
 
