@@ -1,14 +1,20 @@
 # Unofficial Raindrop.io API client
-## Work in progress
 
-[![Actions Status](https://github.com/kattaris/raindrop-io-api-client/workflows/CI/badge.svg)](https://github.com/kattaris/raindrop-io-api-client/actions)
-[![Coverage Status](https://codecov.io/github/kattaris/raindrop-io-api-client/coverage.svg?branch=master)](https://codecov.io/gh/kattaris/raindrop-io-api-client)
-[![Releases](https://img.shields.io/github/v/release/kattaris/raindrop-io-api-client.svg?include_prereleases&style=flat-square)](https://github.com/kattaris/raindrop-io-api-client/releases)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+A Go client for the [Raindrop.io](https://raindrop.io) [REST API](https://developer.raindrop.io/). It handles the OAuth 2.0 authorization flow and wraps the collection, raindrop, and tag endpoints.
 
-### Example usage:
+## Installation
 
+```shell
+go get github.com/cdzombak/raindrop-io-api-client
 ```
+
+Requires the Go version declared in [`go.mod`](go.mod).
+
+## Usage
+
+Create a client with your Raindrop.io app credentials, complete the OAuth flow to obtain an access token, then call the API methods. Logging is optional; use `NewClient` to omit it or `NewClientWithLogger` to pass an `slog.Logger`.
+
+```go
 package main
 
 import (
@@ -27,16 +33,19 @@ import (
 )
 
 func main() {
-	// Create logger (optional)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	
-	client, err := raindrop.NewClientWithLogger("5478394jfkdlsf843u430",
-		"e46b6a8a-018d-43b1-8b28-543kjl32ghj",
-		"http://localhost:8080/oauth", logger)
+
+	client, err := raindrop.NewClientWithLogger(
+		"your-client-id",
+		"your-client-secret",
+		"http://localhost:8080/oauth",
+		logger,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// Serve the OAuth redirect endpoint.
 	go func() {
 		http.HandleFunc("/oauth", client.GetAuthorizationCodeHandler)
 		if err := http.ListenAndServe(":8080", nil); err != nil {
@@ -44,14 +53,12 @@ func main() {
 		}
 	}()
 
-	// Step 1: The authorization request
-	authUrl, err := client.GetAuthorizationURL()
+	// Send the user to Raindrop.io to authorize the app.
+	authURL, err := client.GetAuthorizationURL()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// Step 2: The redirection to your application site
-	u, err := url.QueryUnescape(authUrl.String())
+	u, err := url.QueryUnescape(authURL.String())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -59,56 +66,52 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Step 3: The token exchange
+	// Wait for the authorization code, then exchange it for an access token.
 	for client.ClientCode == "" {
-		fmt.Println("Waiting for client to authorize")
+		fmt.Println("Waiting for authorization…")
 		time.Sleep(3 * time.Second)
 	}
 
 	ctx := context.Background()
-	accessTokenResp, err := client.GetAccessToken(client.ClientCode, ctx)
+	tokenResp, err := client.GetAccessToken(client.ClientCode, ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	accessToken := accessTokenResp.AccessToken
+	accessToken := tokenResp.AccessToken
 
-	// Step 4: Check API's methods
-	result, err := client.CreateCollection(accessToken, true, "list",
-		"Test", 1, false, 0, nil, ctx)
+	// Call the API.
+	collections, err := client.GetRootCollections(accessToken, ctx)
 	if err != nil {
-		log.Printf("Error creating collection: %v", err)
-	} else {
-		fmt.Printf("Create collection result: %v\n", result)
+		log.Fatal(err)
 	}
-
-	rootCollections, err := client.GetRootCollections(accessToken, ctx)
-	if err != nil {
-		log.Printf("Error getting root collections: %v", err)
-	} else {
-		fmt.Printf("Root Collections: %v\n", rootCollections)
-	}
-
-	childCollections, err := client.GetChildCollections(accessToken, ctx)
-	if err != nil {
-		log.Printf("Error getting child collections: %v", err)
-	} else {
-		fmt.Printf("Child Collections: %v\n", childCollections)
-	}
+	fmt.Printf("Root collections: %v\n", collections)
 }
 
 func openBrowser(url string) error {
-	var err error
 	switch runtime.GOOS {
 	case "linux":
-		err = exec.Command("xdg-open", url).Start()
+		return exec.Command("xdg-open", url).Start()
 	case "windows":
-		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 	case "darwin":
-		err = exec.Command("open", url).Start()
+		return exec.Command("open", url).Start()
 	default:
-		err = fmt.Errorf("unsupported platform")
+		return fmt.Errorf("unsupported platform")
 	}
-
-	return err
 }
 ```
+
+Once you have an access token, you can refresh it later with `RefreshAccessToken` rather than repeating the full authorization flow.
+
+## Supported endpoints
+
+- **Authorization:** `GetAuthorizationURL`, `GetAuthorizationCodeHandler`, `GetAuthorizationCode`, `GetAccessToken`, `RefreshAccessToken`
+- **Collections:** `GetRootCollections`, `GetChildCollections`, `GetCollection`, `CreateCollection`
+- **Raindrops:** `CreateSimpleRaindrop`, `GetRaindrops`, `GetTaggedRaindrops`
+- **Tags:** `GetTags`, `DeleteTags`
+
+## License
+
+Apache 2.0. See [LICENSE](LICENSE).
+
+This is a fork of [antonnagorniy/raindrop-io-api-client](https://github.com/antonnagorniy/raindrop-io-api-client).
